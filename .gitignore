@@ -1,6 +1,7 @@
 /.vscode
 /main
-/main.cpp
+
 /public_key
-/public_key.h
+/public_key.cpp
 /test.cpp
+public_key.cpp
