@@ -14,7 +14,6 @@ private:
     const unsigned int gamma;
     const unsigned int alpha;
     const unsigned int tau;
-    const unsigned int levels;
     mpz_class prime;
     mpz_class q_zero;
     mpz_class x_zero;
@@ -25,7 +24,6 @@ private:
     gmp_randclass rand;
     const time_t rand_seed {time(NULL)};
     gmp_randstate_t state;
-    std::vector<mpz_class> ladder;
 public:
     PKgenerator(unsigned int bits) :
         noise(54),
@@ -40,9 +38,8 @@ public:
         chi(tau),
         r_i(tau),
         delta(tau),
-        rand(gmp_randinit_default),
-        levels(5),
-        ladder(levels,0)
+        rand(gmp_randinit_default)
+        
     {
         gmp_randinit_default(state);
         rand.seed(rand_seed);
@@ -159,15 +156,7 @@ public:
         return;
     }
 
-    // void decreasingModuli(){
-    //     mpz_class mu = 56;
-    //     ladder[ladder.size() - 1] = (levels + 1) * mu;
-    //     mpz_class ladder[0] = 2 * mu;
-    //     for (int i = levels-1; i > 1; i--) {
-    //         mpz_class eta = (i + 1) * mu;
-    //         ladder[i-1] = eta;
-    //     }
-    // }
+
 
         
     mpz_class getPrime() const { return prime; }
