@@ -5,3 +5,7 @@
 /public_key.cpp
 /test.cpp
 public_key.cpp
+callgrind.out.28690
+massif.out.28681
+v.txt
+modulo_switch

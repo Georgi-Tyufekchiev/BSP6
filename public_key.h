@@ -1,3 +1,5 @@
+#ifndef PK_H
+#define PK_H
 
 #include <gmpxx.h>
 #include <vector>
@@ -8,6 +10,11 @@
 #include <iostream>
 
 class PKgenerator {
+public:
+    gmp_randclass rand;
+    const time_t rand_seed {time(NULL)};
+    gmp_randstate_t state;
+
 private:
     const unsigned int noise;
     const unsigned int eta;
@@ -21,23 +28,22 @@ private:
     std::vector<mpz_class> chi;
     std::vector<mpz_class> r_i;
     std::vector<mpz_class> delta;
-    gmp_randclass rand;
-    const time_t rand_seed {time(NULL)};
-    gmp_randstate_t state;
+   
+
 public:
-    PKgenerator(unsigned int bits) :
+    PKgenerator(unsigned int bits,unsigned int tau) :
         noise(54),
         eta(bits*3),
         gamma(150000),
         alpha(936),
-        tau(158),
+        tau(tau),
         prime(0),
         q_zero(0),
         x_zero(0),
         pk_sum(0),
-        chi(tau),
-        r_i(tau),
-        delta(tau),
+        chi(tau,0),
+        r_i(tau,0),
+        delta(tau,0),
         rand(gmp_randinit_default)
         
     {
@@ -54,6 +60,11 @@ public:
         genXi();
         // gmp_randclear(state);
     }
+        ~PKgenerator(){
+            chi.clear();
+            r_i.clear();
+            delta.clear();
+        }
 
     void genXi(){
         mpz_class delta_mod;
@@ -178,6 +189,8 @@ public:
         return;
     }
 };
+
+#endif
 
 // big theta = 195
 // small theta = 15
