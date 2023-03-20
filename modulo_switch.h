@@ -24,8 +24,7 @@ class SwitchKey{
         const unsigned int theta;
         std::vector<bool> s;
         std::vector<bool> newS;
-        std::vector<bool> s_prime;
-        std::vector<mpz_class> small_sigma;
+        // std::vector<std::vector<mpz_class>> s_prime;
 
     public:
         SwitchKey(unsigned int levels,unsigned int theta):
@@ -34,14 +33,9 @@ class SwitchKey{
             y(theta,0),
             eta_ladder(levels,0),
             s(theta,false),
-            newS(theta,false),
-            small_sigma(theta,0),
-            s_prime(theta,false)         
+            newS(theta,false)
+            // s_prime(theta,std::vector<mpz_class>(theta,0))         
     {
-        // s.reserve(theta);
-        // newS.reserve(theta);
-        // s_prime.reserve(theta);
-        // small_sigma.reserve(theta);
         decreasingModuli();
         generatePK();
     }
@@ -55,15 +49,11 @@ class SwitchKey{
         eta_ladder.clear();
         s.clear();
         newS.clear();
-        small_sigma.clear();
-        s_prime.clear();
     }
 
 
 
  void generatePK(){
-        // pk_list.reserve(levels);
-
         for(int i = 0; i < eta_ladder.size(); i++){
            PKgenerator* pk = new PKgenerator(eta_ladder[i],158);
            pk_list.push_back(pk);
@@ -72,8 +62,6 @@ class SwitchKey{
     }
     void decreasingModuli(){
         // create a list of decreasing eta values
-        // eta_ladder.reserve(levels);
-
         eta_ladder[0] = (levels + 1) * mu;
         eta_ladder[eta_ladder.size() - 1] = 2 * mu;
         for (int i = levels-1; i > 1; i--) {
@@ -123,14 +111,12 @@ class SwitchKey{
         
         mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
 
-
         // Generate a random vector s of theta bits
         for (int i = 0; i < theta; i++) {
             mp_bitcnt_t randomBit = gmp_urandomb_ui(state, 1);
             s[i] = (randomBit == 1);
         }
         
-
         // Calculate the dot product of s and y
         mpz_class dotProduct = 0;
         for (int i = 0; i < theta; i++) {
@@ -138,7 +124,6 @@ class SwitchKey{
                 dotProduct += y[i];
             }
         }
-
         // Calculate the error term e
         mpf_class floatError = mpf_class(0, kappa);
         mpf_urandomb(floatError.get_mpf_t(), state, kappa);
@@ -148,7 +133,6 @@ class SwitchKey{
         error -= (mpz_class(1) << (eta.get_ui() - 1));
         delete[] strError;
         delete exponent;
-        // printf("Error term ok\n");
         
         // Calculate the left-hand side of the equation
         mpz_class lhs = (mpz_class(1) << eta.get_ui()) / p;
@@ -174,20 +158,30 @@ class SwitchKey{
         std::vector<mpz_class> q(range,0);
         std::vector<mpz_class> r(range,0);
         for(int i=0; i<range;i++){
-
-
             mpz_class q_i{0};
-
             mpz_urandomm(q_i.get_mpz_t(),state,q0.get_mpz_t());
-
             q[i] = q_i;
         }
 
         for(int i=0;i<range;i++){
             mpz_class r_i{0};
-            
             mpz_urandomm(r_i.get_mpz_t(),state,rho.get_mpz_t());
             r[i] = r_i;
+        }
+
+        for(int i=0; i< range;i++){
+            q[i] *= p_prime;
+            q[i] += r[i];
+        }
+
+        mpz_class divisor(mpz_class(1) << (eta_prime.get_ui() + 1));
+        mpz_class scal {p_prime / divisor};
+        std::vector<std::vector<mpz_class>> s_prime = powersOf2(eta_prime);
+        for(int i=0;i<eta_prime;i++){
+            for(int j=0;j<theta;j++){
+                s_prime[i][j] *= scal;
+                q[i] += s_prime[i][j];
+            }
         }
 
         gmp_randclear(state);
@@ -197,11 +191,16 @@ class SwitchKey{
         return 0;
     }
 
-    void powersOf2(mpz_class eta){
+    std::vector<std::vector<mpz_class>> powersOf2(mpz_class eta_p){
         int k {1};
-        for (int i = 0; i <= eta; i++) {
-            s_prime.push_back(s[i] * (k << i));
+        std::vector<std::vector<mpz_class>> s_prime(eta_p.get_ui(),std::vector<mpz_class>(theta,0));
+        for (int i = 0; i <eta_p; i++) {
+            for(int j=0;j<theta;j++){
+                s_prime[i][j] = newS[j] * (k << i);
+            }
         }
+        return s_prime;
+
     }
 
 };
