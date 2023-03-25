@@ -122,7 +122,7 @@ public:
         mpz_class modulus {2};
         mpz_mod(plaintext.get_mpz_t(), c.get_mpz_t(), prime.get_mpz_t());
         mpz_mod(tmp.get_mpz_t(), plaintext.get_mpz_t(), modulus.get_mpz_t());
-        // gmp_printf("num: %Zd\n", tmp.get_mpz_t());
+        gmp_printf("num: %Zd\n", tmp.get_mpz_t());
         return tmp;
 
     }

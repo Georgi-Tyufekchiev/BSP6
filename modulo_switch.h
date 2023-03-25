@@ -53,7 +53,7 @@ class SwitchKey{
 
 
 
- void generatePK(){
+    void generatePK(){
         for(int i = 0; i < eta_ladder.size(); i++){
            PKgenerator* pk = new PKgenerator(eta_ladder[i],158);
            pk_list.push_back(pk);
@@ -70,15 +70,48 @@ class SwitchKey{
         }
     }
 
-    
-
     int switchKeyGen(unsigned int j){
         mpz_class eta = eta_ladder[j-1];
         mpz_class eta_prime = eta_ladder[j-2];
         kappa = 2 * gamma.get_ui() + eta.get_ui();
         genYvector(eta_prime);
-        genSvector(eta,eta_prime,pk_list[0]->getPrime(),pk_list[1]->getPrime(),pk_list[1]->getXZero());
+        std::vector<mpz_class> sigma = genSvector(eta,eta_prime,pk_list[0]->getPrime(),pk_list[1]->getPrime(),pk_list[1]->getXZero());
+
+        
         return 0;
+    }
+
+    mpz_class switchKey(mpz_class c,std::vector<mpz_class>& sigma,mpz_class eta_prime){
+        std::vector<mpz_class> expand_c(theta,0);
+        std::vector<bool> bits;
+        mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
+        mpz_class c_mod;
+        mpz_mod(c_mod.get_mpz_t(),c.get_mpz_t(),mpz_class(2).get_mpz_t());
+
+        mpz_class mod_res;
+        for(int i = 0; i < theta;i++){
+            mpz_class product  = c * y[i];
+            mpz_mod(expand_c[i].get_mpz_t(),product.get_mpz_t(),modulus.get_mpz_t());
+        }
+
+        bits.reserve(eta_prime.get_ui() + 1 * theta);
+        for(auto elem : expand_c){
+            for (int i = eta_prime.get_ui(); i >= 0; --i) {
+                bool bit = (elem.get_ui() >> i) & 1;
+                bits.push_back(bit);
+            }
+        }
+
+        mpz_class c_prim = 0;
+        for(int i = 0;i<sigma.size();i++){
+            c_prim += sigma[i] * bits[i];
+        }
+        c_prim *= 2;
+        c_prim += c_mod;
+
+        return c_prim;
+
+
     }
 
     int genYvector(mpz_class eta_prime){
@@ -102,7 +135,7 @@ class SwitchKey{
         return 0;
     }
 
-    int genSvector(mpz_class eta,mpz_class eta_prime,mpz_class p,mpz_class p_prime,mpz_class x0){
+    std::vector<mpz_class> genSvector(mpz_class eta,mpz_class eta_prime,mpz_class p,mpz_class p_prime,mpz_class x0){
         gmp_randstate_t state;
         gmp_randinit_default(state);
         gmp_randseed_ui(state, time(NULL));
@@ -176,31 +209,43 @@ class SwitchKey{
 
         mpz_class divisor(mpz_class(1) << (eta_prime.get_ui() + 1));
         mpz_class scal {p_prime / divisor};
-        std::vector<std::vector<mpz_class>> s_prime = powersOf2(eta_prime);
-        for(int i=0;i<eta_prime;i++){
-            for(int j=0;j<theta;j++){
-                s_prime[i][j] *= scal;
-                q[i] += s_prime[i][j];
-            }
+        std::vector<mpz_class> s_prime = powersOf2(eta_prime,range);
+        for(int i=0;i<range;i++){
+            s_prime[i] *= scal;
+            q[i] += s_prime[i];
         }
 
         gmp_randclear(state);
-        q.clear();
+        
         r.clear();
 
-        return 0;
+        return q;
     }
 
-    std::vector<std::vector<mpz_class>> powersOf2(mpz_class eta_p){
+    std::vector<mpz_class> powersOf2(mpz_class eta_p,unsigned int range){
         int k {1};
-        std::vector<std::vector<mpz_class>> s_prime(eta_p.get_ui(),std::vector<mpz_class>(theta,0));
+        std::vector<mpz_class> s_prime(range,0);
         for (int i = 0; i <eta_p; i++) {
-            for(int j=0;j<theta;j++){
-                s_prime[i][j] = newS[j] * (k << i);
+            unsigned int cnt = 0;
+            for(int j=i*theta;j<(i+1)*theta;j++){
+                s_prime[j] = newS[cnt] * (k << (i+1));
+                cnt+=1;
             }
         }
         return s_prime;
 
+    }
+
+    mpz_class enc(mpz_class m){
+        return pk_list[0]->encrypt(m);
+    }
+    
+    mpz_class dec(mpz_class c){
+        return pk_list[0]->decrypt(c);
+    }
+
+    mpz_class add(mpz_class c1, mpz_class c2){
+        mpz_class c3 = c1 + c2;
     }
 
 };
