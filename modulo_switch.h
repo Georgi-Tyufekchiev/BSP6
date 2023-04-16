@@ -16,25 +16,22 @@ class SwitchKey{
     private:
         const unsigned int levels;
         std::vector<unsigned int> eta_ladder;
-        const unsigned int mu {56};
         std::vector<PKgenerator*> pk_list;
         mpz_class gamma{150000};
         unsigned int kappa;
-        std::vector<mpz_class> y;
+        std::vector<mpf_class> y;
         const unsigned int theta;
         std::vector<bool> s;
-        std::vector<bool> newS;
-        // std::vector<std::vector<mpz_class>> s_prime;
-
+        std::vector<mpz_class> q;
+        mpz_class eta_prime;
+    
     public:
         SwitchKey(unsigned int levels,unsigned int theta):
             levels {levels},
             theta(theta),
             y(theta,0),
             eta_ladder(levels,0),
-            s(theta,false),
-            newS(theta,false)
-            // s_prime(theta,std::vector<mpz_class>(theta,0))         
+            s(theta,false)
     {
         decreasingModuli();
         generatePK();
@@ -48,7 +45,7 @@ class SwitchKey{
         y.clear();
         eta_ladder.clear();
         s.clear();
-        newS.clear();
+        q.clear();
     }
 
 
@@ -62,51 +59,67 @@ class SwitchKey{
     }
     void decreasingModuli(){
         // create a list of decreasing eta values
+        const unsigned int mu {56};
+
         eta_ladder[0] = (levels + 1) * mu;
         eta_ladder[eta_ladder.size() - 1] = 2 * mu;
         for (int i = levels-1; i > 1; i--) {
             unsigned int eta = (i + 1) * mu;
-            eta_ladder[i-1] = eta;
+            eta_ladder[eta_ladder.size() - i] = eta;
         }
     }
 
     int switchKeyGen(unsigned int j){
-        mpz_class eta = eta_ladder[j-1];
-        mpz_class eta_prime = eta_ladder[j-2];
+        mpz_class eta = eta_ladder[1];
+        eta_prime = eta_ladder[2];
         kappa = 2 * gamma.get_ui() + eta.get_ui();
         genYvector(eta_prime);
-        std::vector<mpz_class> sigma = genSvector(eta,eta_prime,pk_list[0]->getPrime(),pk_list[1]->getPrime(),pk_list[1]->getXZero());
+        genSvector(eta,eta_prime,pk_list[1]->getPrime(),pk_list[2]->getPrime(),pk_list[2]->getXZero(),pk_list[2]->getQZero());
 
         
         return 0;
     }
 
-    mpz_class switchKey(mpz_class c,std::vector<mpz_class>& sigma,mpz_class eta_prime){
+    mpz_class switchKey(mpz_class c){
         std::vector<mpz_class> expand_c(theta,0);
         std::vector<bool> bits;
         mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
         mpz_class c_mod;
         mpz_mod(c_mod.get_mpz_t(),c.get_mpz_t(),mpz_class(2).get_mpz_t());
+        gmp_printf("cmod: %Zd\n", c_mod.get_mpz_t());
 
         mpz_class mod_res;
         for(int i = 0; i < theta;i++){
-            mpz_class product  = c * y[i];
-            mpz_mod(expand_c[i].get_mpz_t(),product.get_mpz_t(),modulus.get_mpz_t());
+            mpz_class product  = c * mpz_class(y[i].get_ui());
+            // gmp_printf("product: %Zf\n", y[i].get_mpf_t());
+            // mpf_out_str(stdout,10,10,y[i].get_mpf_t());
+
+            mpz_mod(mod_res.get_mpz_t(),product.get_mpz_t(),modulus.get_mpz_t());
+            expand_c[i] = mod_res;
         }
 
         bits.reserve(eta_prime.get_ui() + 1 * theta);
         for(auto elem : expand_c){
+            // gmp_printf("elem: %Zd\n", elem.get_mpz_t());
+
             for (int i = eta_prime.get_ui(); i >= 0; --i) {
+
                 bool bit = (elem.get_ui() >> i) & 1;
                 bits.push_back(bit);
             }
         }
 
+        // for(auto bit: bits){
+        //     std::cout << "Bit:" << bit << std::endl;
+        // }
+
         mpz_class c_prim = 0;
-        for(int i = 0;i<sigma.size();i++){
-            c_prim += sigma[i] * bits[i];
+        for(int i = 0;i<q.size();i++){
+            c_prim += q[i] * bits[i];
         }
         c_prim *= 2;
+        // gmp_printf("cprim: %Zd\n", c_prim.get_mpz_t());  
+
         c_prim += c_mod;
 
         return c_prim;
@@ -118,87 +131,79 @@ class SwitchKey{
         gmp_randstate_t state;
         gmp_randinit_default(state);
         gmp_randseed_ui(state, time(NULL));
-        const unsigned int base = 10;
-        mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
 
-        // generate random numbers modulo 2^(eta_prime + 1)
-        // each number has kappa bits precision after the binary point
-        mpf_set_default_prec(kappa);
+        // Create the random number generator and seed it with the current time
+        gmp_randclass rand(gmp_randinit_default);
+        rand.seed(time(NULL));
+
+
+        // Generate theta random float numbers with kappa bits of precision and store them in the y vector
+        const unsigned int decimal_min = 1;
+        const unsigned int decimal_max = (2 << (eta_prime.get_ui() + 1)) - 1;
+        
         for (int i = 0; i < theta; i++) {
-            mpz_class randomInt;
-            mpz_urandomb(randomInt.get_mpz_t(), state, kappa);
-            mpz_mod(randomInt.get_mpz_t(), randomInt.get_mpz_t(), modulus.get_mpz_t());
-            y[i] = randomInt;
-        }
+            // Generate a random decimal part in the specified range
+            mpz_class decimal_part = rand.get_z_range(decimal_max - decimal_min + 1) + decimal_min;
 
+            // Generate a random float with the specified precision and add the decimal part to it
+            mpf_class f = rand.get_f(kappa) + mpf_class(decimal_part);
+            y[i]=f;
+        }
         gmp_randclear(state);
         return 0;
     }
 
-    std::vector<mpz_class> genSvector(mpz_class eta,mpz_class eta_prime,mpz_class p,mpz_class p_prime,mpz_class x0){
+    void genSvector(mpz_class eta,mpz_class eta_prime,mpz_class p,mpz_class p_prime,mpz_class x0,mpz_class q0){
         gmp_randstate_t state;
         gmp_randinit_default(state);
         gmp_randseed_ui(state, time(NULL));
         gmp_randinit_mt(state);
-        mp_exp_t* exponent = new mp_exp_t(1);
-        
-        mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
+        mpf_set_default_prec(kappa);
 
-        // Generate a random vector s of theta bits
-        for (int i = 0; i < theta; i++) {
-            mp_bitcnt_t randomBit = gmp_urandomb_ui(state, 1);
-            s[i] = (randomBit == 1);
-        }
-        
-        // Calculate the dot product of s and y
-        mpz_class dotProduct = 0;
-        for (int i = 0; i < theta; i++) {
-            if (s[i]) {
-                dotProduct += y[i];
-            }
-        }
-        // Calculate the error term e
-        mpf_class floatError = mpf_class(0, kappa);
-        mpf_urandomb(floatError.get_mpf_t(), state, kappa);
-        char* strError = new char[kappa + 2];
-        mpf_get_str(strError, exponent, 10, kappa, floatError.get_mpf_t());
-        mpz_class error = mpz_class(strError) % (mpz_class(1) << eta.get_ui());
-        error -= (mpz_class(1) << (eta.get_ui() - 1));
-        delete[] strError;
-        delete exponent;
-        
-        // Calculate the left-hand side of the equation
-        mpz_class lhs = (mpz_class(1) << eta.get_ui()) / p;
-        
-        // Calculate the right-hand side of the equation
-        mpz_class rhs = dotProduct + error;
-        rhs %= modulus;
+        // Compute the divisor 2^eta / prime
+        mpf_class divisor;
+        mpf_class top(mpf_class(1) << eta_prime.get_ui());
+        mpf_div(divisor.get_mpf_t(),top.get_mpf_t(),mpf_class(p).get_mpf_t());
+     
 
-         // Calculate the vector s such that (2^eta)/p = <s, y> + e mod 2^(eta+1)
-        for (int i = 0; i < theta; i++) {
-            if (rhs >= (modulus / mpz_class(2))) {
-                newS[i] = true;
-                rhs -= y[i];
+
+        // Compute the threshold
+        mpf_class eps;
+        mpf_class power(mpf_class(1) << kappa);
+        mpf_div(eps.get_mpf_t(),mpf_class(1).get_mpf_t(),power.get_mpf_t());
+
+        mpf_class threshold = divisor - eps;
+        mpz_class modu(mpz_class(1) << eta_prime.get_ui() + 1);
+        // Generate the bit vector s
+    
+        mpz_class sum {0};
+        for (int i = 0; i < y.size(); i++) {
+            mpz_class decimal{y[i].get_ui()};
+            mpz_class rem;
+            mpz_mod(rem.get_mpz_t(),decimal.get_mpz_t(),modu.get_mpz_t());
+            if (rem > threshold || mpf_cmp(mpf_class(sum).get_mpf_t(),threshold.get_mpf_t())>0) {
+                s[i] = 0;
             } else {
-                newS[i] = false;
-            }
-            rhs *= 2;
-        }
+                s[i] = 1;
+                sum += y[i].get_ui();
+                mpz_mod(sum.get_mpz_t(),sum.get_mpz_t(),modu.get_mpz_t());
 
-        mpz_class q0 {x0 / p_prime};
-        mpz_class rho{mpz_class(1) << 54};
+            }
+        }
+        
+        mpz_class rho{54};
         const unsigned int range = (eta_prime.get_ui() + 1) * theta;
-        std::vector<mpz_class> q(range,0);
+        q.reserve(range);
         std::vector<mpz_class> r(range,0);
         for(int i=0; i<range;i++){
             mpz_class q_i{0};
             mpz_urandomm(q_i.get_mpz_t(),state,q0.get_mpz_t());
-            q[i] = q_i;
+            q.push_back(q_i);
         }
 
         for(int i=0;i<range;i++){
             mpz_class r_i{0};
-            mpz_urandomm(r_i.get_mpz_t(),state,rho.get_mpz_t());
+            mpz_urandomb(r_i.get_mpz_t(),state,rho.get_ui());
             r[i] = r_i;
         }
 
@@ -207,8 +212,8 @@ class SwitchKey{
             q[i] += r[i];
         }
 
-        mpz_class divisor(mpz_class(1) << (eta_prime.get_ui() + 1));
-        mpz_class scal {p_prime / divisor};
+        mpz_class diviso(mpz_class(1) << (eta_prime.get_ui() + 1));
+        mpz_class scal {p_prime / diviso};
         std::vector<mpz_class> s_prime = powersOf2(eta_prime,range);
         for(int i=0;i<range;i++){
             s_prime[i] *= scal;
@@ -219,16 +224,16 @@ class SwitchKey{
         
         r.clear();
 
-        return q;
+        return;
     }
 
     std::vector<mpz_class> powersOf2(mpz_class eta_p,unsigned int range){
         int k {1};
         std::vector<mpz_class> s_prime(range,0);
-        for (int i = 0; i <eta_p; i++) {
+        for (int i = 1; i <=eta_p; i++) {
             unsigned int cnt = 0;
             for(int j=i*theta;j<(i+1)*theta;j++){
-                s_prime[j] = newS[cnt] * (k << (i+1));
+                s_prime[j] = s[cnt] * (k << i);
                 cnt+=1;
             }
         }
@@ -237,15 +242,26 @@ class SwitchKey{
     }
 
     mpz_class enc(mpz_class m){
-        return pk_list[0]->encrypt(m);
+        return pk_list[1]->encrypt(m);
     }
     
-    mpz_class dec(mpz_class c){
-        return pk_list[0]->decrypt(c);
+    mpz_class dec(mpz_class c,int i){
+        return pk_list[2]->decrypt(c);
     }
 
     mpz_class add(mpz_class c1, mpz_class c2){
+        mpz_class parity;
+        mpz_class reduced;
         mpz_class c3 = c1 + c2;
+    
+
+        mpz_mod(reduced.get_mpz_t(),c3.get_mpz_t(),pk_list[1]->getXZero().get_mpz_t());
+        // mpz_mod(parity.get_mpz_t(), reduced.get_mpz_t(), mpz_class(2).get_mpz_t());
+        // gmp_printf("parity of reduced c3: %Zd\n", parity.get_mpz_t());
+
+        mpz_class c_prim = switchKey(c3);
+        mpz_class m = dec(c_prim,1);
+        return m; 
     }
 
 };

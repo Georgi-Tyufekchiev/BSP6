@@ -33,7 +33,7 @@ private:
 public:
     PKgenerator(unsigned int bits,unsigned int tau) :
         noise(54),
-        eta(bits*3),
+        eta(bits),
         gamma(150000),
         alpha(936),
         tau(tau),
@@ -55,10 +55,14 @@ public:
         mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
 
         // Upper bound for q0 which is 2^y / prime
-        mpz_urandomb(q_zero.get_mpz_t(), state, gamma-1);
+        mpz_class bound_y(mpz_class(1) << gamma);
+        mpz_class bound_div;
+        mpz_cdiv_q(bound_div.get_mpz_t(),bound_y.get_mpz_t(),prime.get_mpz_t());
+        q_zero = rand.get_z_range(bound_div.get_ui());
+        // mpz_urandomb(q_zero.get_mpz_t(), state,bound_div.get_ui());
         x_zero = (2*q_zero + 1) * prime;
         genXi();
-        // gmp_randclear(state);
+        gmp_randclear(state);
     }
         ~PKgenerator(){
             chi.clear();
@@ -107,12 +111,16 @@ public:
         mpz_class r;
         mpz_class ciphertext_mod{0};
         mpz_class ciphertext;
+        mpz_class test;
 
         r = rand.get_z_bits(noise);
         computePKsum();
-        ciphertext = pk_sum + 2 * r + m;
+        ciphertext = 2*pk_sum + 2 * r + m;
         mpz_mod(ciphertext_mod.get_mpz_t(), ciphertext.get_mpz_t(), x_zero.get_mpz_t());
-        return ciphertext_mod;
+        mpz_mod(test.get_mpz_t(), ciphertext_mod.get_mpz_t(), mpz_class(2).get_mpz_t());
+        gmp_printf("parity: %Zd\n", test.get_mpz_t());
+
+        return ciphertext;
 
     }
 
@@ -122,15 +130,22 @@ public:
         mpz_class modulus {2};
         mpz_mod(plaintext.get_mpz_t(), c.get_mpz_t(), prime.get_mpz_t());
         mpz_mod(tmp.get_mpz_t(), plaintext.get_mpz_t(), modulus.get_mpz_t());
-        gmp_printf("num: %Zd\n", tmp.get_mpz_t());
+        gmp_printf("bit: %Zd\n", tmp.get_mpz_t());
         return tmp;
 
     }
 
     mpz_class add(mpz_class c1,mpz_class c2){
         mpz_class reduced_c;
+        mpz_class parity;
         mpz_class addition = c1 + c2;
         mpz_mod(reduced_c.get_mpz_t(),addition.get_mpz_t(),x_zero.get_mpz_t());
+        mpz_mod(parity.get_mpz_t(),addition.get_mpz_t(),mpz_class(2).get_mpz_t());
+        gmp_printf("parity sum: %Zd\n", parity.get_mpz_t());
+        mpz_mod(parity.get_mpz_t(),reduced_c.get_mpz_t(),mpz_class(2).get_mpz_t());
+        gmp_printf("parity reduced sum: %Zd\n", parity.get_mpz_t());
+
+
         return reduced_c;
     }
 
@@ -172,6 +187,7 @@ public:
         
     mpz_class getPrime() const { return prime; }
     mpz_class getXZero() const { return x_zero; }
+    mpz_class getQZero() const { return q_zero;}
     time_t getSeed() const {printf("seed: %s\n", ctime(&rand_seed));return rand_seed; }
     std::vector<mpz_class> getDelta() const { return delta; }
 
