@@ -1,5 +1,6 @@
 #ifndef PK_H
 #define PK_H
+#include <chrono>
 
 #include <gmpxx.h>
 #include <vector>
@@ -19,7 +20,6 @@ private:
     const unsigned int noise;
     const unsigned int eta;
     const unsigned int gamma;
-    const unsigned int alpha;
     const unsigned int tau;
     mpz_class prime;
     mpz_class q_zero;
@@ -31,11 +31,10 @@ private:
    
 
 public:
-    PKgenerator(unsigned int bits,unsigned int tau) :
-        noise(54),
+    PKgenerator(unsigned int bits,unsigned int tau,unsigned int rho,unsigned int gamma) :
+        noise(rho),
         eta(bits),
-        gamma(150000),
-        alpha(936),
+        gamma(gamma),
         tau(tau),
         prime(0),
         q_zero(0),
@@ -48,6 +47,8 @@ public:
         
     {
         gmp_randinit_default(state);
+        gmp_randseed_ui(state, time(NULL));
+
         rand.seed(rand_seed);
 
         // Generate random prime integer p of size eta bits
@@ -93,6 +94,16 @@ public:
         }
     }
 
+    std::vector<mpz_class> getXi(){
+        std::vector<mpz_class> x(chi.size(),0);
+        for(int i = 0; i < tau; i++){
+            x[i] = chi[i] - delta[i];
+        }
+
+        return x;
+    }
+
+
     void computePKsum(){
         mpz_class bound {2};
         mpz_class x;
@@ -118,7 +129,6 @@ public:
         ciphertext = 2*pk_sum + 2 * r + m;
         mpz_mod(ciphertext_mod.get_mpz_t(), ciphertext.get_mpz_t(), x_zero.get_mpz_t());
         mpz_mod(test.get_mpz_t(), ciphertext_mod.get_mpz_t(), mpz_class(2).get_mpz_t());
-        gmp_printf("parity: %Zd\n", test.get_mpz_t());
 
         return ciphertext;
 
@@ -140,10 +150,6 @@ public:
         mpz_class parity;
         mpz_class addition = c1 + c2;
         mpz_mod(reduced_c.get_mpz_t(),addition.get_mpz_t(),x_zero.get_mpz_t());
-        mpz_mod(parity.get_mpz_t(),addition.get_mpz_t(),mpz_class(2).get_mpz_t());
-        gmp_printf("parity sum: %Zd\n", parity.get_mpz_t());
-        mpz_mod(parity.get_mpz_t(),reduced_c.get_mpz_t(),mpz_class(2).get_mpz_t());
-        gmp_printf("parity reduced sum: %Zd\n", parity.get_mpz_t());
 
 
         return reduced_c;
@@ -184,6 +190,7 @@ public:
 
 
 
+
         
     mpz_class getPrime() const { return prime; }
     mpz_class getXZero() const { return x_zero; }
@@ -206,8 +213,91 @@ public:
     }
 };
 
+
+mpz_class prime_to_m(mpz_class n, mpz_class m){
+    mpz_class g;
+    while(true){
+        mpz_gcd(g.get_mpz_t(), n.get_mpz_t(), m.get_mpz_t());
+        if(g == 1){
+            return n;
+        }else{
+            mpz_fdiv_q(n.get_mpz_t(),n.get_mpz_t(),g.get_mpz_t());
+        }
+        
+    }
+}
+mpz_class xi(mpz_class p,int gam,int eta,int rho,gmp_randstate_t state){
+
+
+    mpz_class bound_q(mpz_class(1) << (gam -eta));
+    mpz_class q;
+    mpz_class r;
+    mpz_urandomm(q.get_mpz_t(),state,bound_q.get_mpz_t());
+    mpz_class bound_r = mpz_class(1) << rho;
+    mpz_urandomm(r.get_mpz_t(),state,bound_r.get_mpz_t());
+
+    return (p * q) + r;
+}
+
+
+bool attackGACD(){
+    gmp_randstate_t state;
+    gmp_randinit_mt(state);
+    gmp_randseed_ui(state, 1234);
+    const unsigned int rho = 12;
+    const unsigned int gamma = 1000;
+    const unsigned int eta = 100;
+    mpz_class prime{"1133866015397999278511396345017"};
+    // mpz_urandomb(prime.get_mpz_t(), state, eta);
+    // mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
+
+    unsigned int pBits = mpz_sizeinbase(prime.get_mpz_t(), 2);
+    gmp_printf("prime: %Zd\n", prime.get_mpz_t());
+    printf("p size:%d \n",pBits);
+    int exp = (rho * (rho +1)) / (rho-1);
+    mpz_class B;
+    mpz_pow_ui(B.get_mpz_t(),mpz_class(2).get_mpz_t(),exp);
+    B += 2200;
+
+    mpz_class fa{1};
+    mpz_fac_ui(fa.get_mpz_t(),B.get_ui());
+
+    mpz_class g;
+    for(int j=1;j<rho;j++){
+        mpz_class z{1};
+        for(int i=0;i< (1 << rho);i++){
+            z = z * (xi(prime,gamma,eta,rho,state) - i);
+        }
+
+        if(j == 1){
+             g = z;
+            continue;
+        }
+
+        mpz_class gcd;
+        mpz_gcd(gcd.get_mpz_t(), g.get_mpz_t(), z.get_mpz_t());
+        g= prime_to_m(gcd,fa);
+        gmp_printf("g: %Zd\n", g.get_mpz_t());
+
+        // printf("j: %d \n",j);
+        unsigned int gBits = mpz_sizeinbase(g.get_mpz_t(), 2);
+        printf("gcd size:%d \n",gBits);
+
+        if(gBits == pBits || gBits < pBits){
+
+            break;
+        }
+        
+    }
+
+    if((mpz_cmp(g.get_mpz_t(),prime.get_mpz_t())) == 0){
+        return true;
+    }else{
+        return false;
+    }
+
+}
+
 #endif
 
-// big theta = 195
-// small theta = 15
-// mu = 56
+  

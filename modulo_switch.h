@@ -52,7 +52,7 @@ class SwitchKey{
 
     void generatePK(){
         for(int i = 0; i < eta_ladder.size(); i++){
-           PKgenerator* pk = new PKgenerator(eta_ladder[i],158);
+           PKgenerator* pk = new PKgenerator(eta_ladder[i],158,54,150000);
            pk_list.push_back(pk);
 
         }
@@ -86,7 +86,6 @@ class SwitchKey{
         mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
         mpz_class c_mod;
         mpz_mod(c_mod.get_mpz_t(),c.get_mpz_t(),mpz_class(2).get_mpz_t());
-        gmp_printf("cmod: %Zd\n", c_mod.get_mpz_t());
 
         mpz_class mod_res;
         for(int i = 0; i < theta;i++){
