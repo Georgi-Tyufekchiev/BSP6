@@ -10,6 +10,7 @@
 #include <stdexcept> 
 #include <gmpxx.h>
 #include "public_key.h"
+#include <thread> // for sleep_for
 
 
 class SwitchKey{
@@ -17,24 +18,38 @@ class SwitchKey{
         const unsigned int levels;
         std::vector<unsigned int> eta_ladder;
         std::vector<PKgenerator*> pk_list;
-        mpz_class gamma{150000};
+        const unsigned int gamma;
         unsigned int kappa;
         std::vector<mpf_class> y;
         const unsigned int theta;
         std::vector<bool> s;
-        std::vector<mpz_class> q;
+        std::vector<unsigned long int> q;
         mpz_class eta_prime;
+        int rho;
+        unsigned int size;
+        const unsigned int mu;
+
     
     public:
-        SwitchKey(unsigned int levels,unsigned int theta):
+        SwitchKey(unsigned int levels,unsigned int theta, int rho, int gamma, int mu):
             levels {levels},
             theta(theta),
             y(theta,0),
             eta_ladder(levels,0),
-            s(theta,false)
+            s(theta,false),
+            rho(rho),
+            gamma(gamma),
+            size(0),
+            mu(mu)
     {
+        auto start_time = std::chrono::steady_clock::now();
+
         decreasingModuli();
         generatePK();
+
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        std::cout << "KeyGen: " << total_time  << " ms" << std::endl;
     }
 
         ~SwitchKey() {
@@ -48,18 +63,18 @@ class SwitchKey{
         q.clear();
     }
 
-
-
     void generatePK(){
         for(int i = 0; i < eta_ladder.size(); i++){
-           PKgenerator* pk = new PKgenerator(eta_ladder[i],158,54,150000);
-           pk_list.push_back(pk);
+            PKgenerator* pk = new PKgenerator(eta_ladder[i],158,rho,gamma);
+            size += pk->pksize();
+            pk_list.push_back(pk);
+            // std::this_thread::sleep_for(std::chrono::seconds(1)); 
 
         }
+        std::cout << "Pk Size: " << size << std::endl;
     }
     void decreasingModuli(){
         // create a list of decreasing eta values
-        const unsigned int mu {56};
 
         eta_ladder[0] = (levels + 1) * mu;
         eta_ladder[eta_ladder.size() - 1] = 2 * mu;
@@ -70,18 +85,22 @@ class SwitchKey{
     }
 
     int switchKeyGen(unsigned int j){
+        auto start_time = std::chrono::steady_clock::now();
         mpz_class eta = eta_ladder[1];
         eta_prime = eta_ladder[2];
-        kappa = 2 * gamma.get_ui() + eta.get_ui();
+        kappa = 2 * gamma + eta.get_ui();
         genYvector(eta_prime);
         genSvector(eta,eta_prime,pk_list[1]->getPrime(),pk_list[2]->getPrime(),pk_list[2]->getXZero(),pk_list[2]->getQZero());
-
-        
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time).count();
+        std::cout << "SwitchKeyGen: " << total_time * j << " s" << std::endl;
         return 0;
     }
 
     mpz_class switchKey(mpz_class c){
-        std::vector<mpz_class> expand_c(theta,0);
+        auto start_time = std::chrono::steady_clock::now();
+
+        std::vector<unsigned long int> expand_c(theta,0);
         std::vector<bool> bits;
         mpz_class modulus = mpz_class(1) << (eta_prime.get_ui() + 1);
         mpz_class c_mod;
@@ -90,40 +109,32 @@ class SwitchKey{
         mpz_class mod_res;
         for(int i = 0; i < theta;i++){
             mpz_class product  = c * mpz_class(y[i].get_ui());
-            // gmp_printf("product: %Zf\n", y[i].get_mpf_t());
-            // mpf_out_str(stdout,10,10,y[i].get_mpf_t());
-
             mpz_mod(mod_res.get_mpz_t(),product.get_mpz_t(),modulus.get_mpz_t());
-            expand_c[i] = mod_res;
+            expand_c[i] = mod_res.get_ui();
         }
+        y.clear();
 
         bits.reserve(eta_prime.get_ui() + 1 * theta);
         for(auto elem : expand_c){
-            // gmp_printf("elem: %Zd\n", elem.get_mpz_t());
-
             for (int i = eta_prime.get_ui(); i >= 0; --i) {
 
-                bool bit = (elem.get_ui() >> i) & 1;
+                bool bit = (elem >> i) & 1;
                 bits.push_back(bit);
             }
         }
-
-        // for(auto bit: bits){
-        //     std::cout << "Bit:" << bit << std::endl;
-        // }
-
+        expand_c.clear();
         mpz_class c_prim = 0;
         for(int i = 0;i<q.size();i++){
             c_prim += q[i] * bits[i];
         }
+        q.clear();
+        bits.clear();
         c_prim *= 2;
-        // gmp_printf("cprim: %Zd\n", c_prim.get_mpz_t());  
-
         c_prim += c_mod;
-
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        std::cout << "SwitchKey: " << total_time << " ms" << std::endl;
         return c_prim;
-
-
     }
 
     int genYvector(mpz_class eta_prime){
@@ -164,8 +175,6 @@ class SwitchKey{
         mpf_class top(mpf_class(1) << eta_prime.get_ui());
         mpf_div(divisor.get_mpf_t(),top.get_mpf_t(),mpf_class(p).get_mpf_t());
      
-
-
         // Compute the threshold
         mpf_class eps;
         mpf_class power(mpf_class(1) << kappa);
@@ -190,45 +199,50 @@ class SwitchKey{
             }
         }
         
-        mpz_class rho{54};
         const unsigned int range = (eta_prime.get_ui() + 1) * theta;
         q.reserve(range);
-        std::vector<mpz_class> r(range,0);
+        std::vector<unsigned long int> r(range,0);
+        std::random_device dev;
+        std::mt19937 rng(dev());
+        std::uniform_int_distribution<std::mt19937::result_type> dist(1,q0.get_ui()); // distribution in range [1, 6]
         for(int i=0; i<range;i++){
-            mpz_class q_i{0};
-            mpz_urandomm(q_i.get_mpz_t(),state,q0.get_mpz_t());
-            q.push_back(q_i);
+            // mpz_class q_i{0};
+            // mpz_urandomm(q_i.get_mpz_t(),state,q0.get_mpz_t());
+            q.push_back(dist(rng));
         }
 
+        std::uniform_int_distribution<std::mt19937::result_type> distr(1,rho); // distribution in range [1, 6]
+
         for(int i=0;i<range;i++){
-            mpz_class r_i{0};
-            mpz_urandomb(r_i.get_mpz_t(),state,rho.get_ui());
-            r[i] = r_i;
+            // mpz_class r_i{0};
+            // mpz_urandomb(r_i.get_mpz_t(),state,rho);
+            r[i] = distr(rng);
         }
 
         for(int i=0; i< range;i++){
-            q[i] *= p_prime;
+            q[i] *= p_prime.get_ui();
             q[i] += r[i];
         }
 
         mpz_class diviso(mpz_class(1) << (eta_prime.get_ui() + 1));
         mpz_class scal {p_prime / diviso};
-        std::vector<mpz_class> s_prime = powersOf2(eta_prime,range);
+        std::vector<unsigned long int> s_prime = powersOf2(eta_prime,range);
         for(int i=0;i<range;i++){
-            s_prime[i] *= scal;
+            s_prime[i] *= scal.get_ui();
             q[i] += s_prime[i];
         }
 
+
         gmp_randclear(state);
-        
+        s_prime.clear();
         r.clear();
 
         return;
     }
 
-    std::vector<mpz_class> powersOf2(mpz_class eta_p,unsigned int range){
+    std::vector<unsigned long int> powersOf2(mpz_class eta_p,unsigned int range){
         int k {1};
-        std::vector<mpz_class> s_prime(range,0);
+        std::vector<unsigned long int> s_prime(range,0);
         for (int i = 1; i <=eta_p; i++) {
             unsigned int cnt = 0;
             for(int j=i*theta;j<(i+1)*theta;j++){
@@ -236,28 +250,18 @@ class SwitchKey{
                 cnt+=1;
             }
         }
+        s.clear();
         return s_prime;
-
     }
 
-    mpz_class enc(mpz_class m){
-        return pk_list[1]->encrypt(m);
-    }
+    mpz_class enc(mpz_class m){return pk_list[1]->encrypt(m);}
     
-    mpz_class dec(mpz_class c,int i){
-        return pk_list[2]->decrypt(c);
-    }
+    mpz_class dec(mpz_class c,int i){return pk_list[2]->decrypt(c);}
 
     mpz_class add(mpz_class c1, mpz_class c2){
         mpz_class parity;
         mpz_class reduced;
         mpz_class c3 = c1 + c2;
-    
-
-        mpz_mod(reduced.get_mpz_t(),c3.get_mpz_t(),pk_list[1]->getXZero().get_mpz_t());
-        // mpz_mod(parity.get_mpz_t(), reduced.get_mpz_t(), mpz_class(2).get_mpz_t());
-        // gmp_printf("parity of reduced c3: %Zd\n", parity.get_mpz_t());
-
         mpz_class c_prim = switchKey(c3);
         mpz_class m = dec(c_prim,1);
         return m; 

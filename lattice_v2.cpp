@@ -8,10 +8,7 @@
 using namespace std;
 using namespace fplll;
 const mpz_class lambd{mpz_class(2) << 100};
-vector<mpz_class> genXi(int rho, int eta, int gam) {
-    gmp_randstate_t state;
-    gmp_randinit_mt(state);
-    gmp_randseed_ui(state, time(NULL));
+vector<mpz_class> genXi(int rho, int eta, int gam,gmp_randstate_t state) {
     mpz_class x1 = 5;
     mpz_class x0 = 1;
     mpz_class prime;
@@ -45,7 +42,7 @@ vector<mpz_class> genXi(int rho, int eta, int gam) {
 
 }
 
-vector<mpz_class> enc(vector<mpz_class>& pk, std::vector<int>& m, int n = 32) {
+vector<mpz_class> enc(vector<mpz_class>& pk, std::vector<int>& m, int n = 80) {
     int d = 2 * n;
     mpz_class two_to_d = mpz_class(1) << d;
     mpz_class two_to_d_minus_two = mpz_class(1) << (d - 2);
@@ -70,8 +67,8 @@ ZZ_mat<mpz_t> create_lattice(int t, vector<mpz_class>& c) {
     ZZ_mat<mpz_t> M(t, t+1);
     mpz_t one;
     mpz_init_set_ui(one, 1); 
-    // #pragma omp parallel for 
-    #pragma omp target teams distribute parallel for
+    // #pragma omp target teams distribute parallel for
+    // #pragma omp parallel for simd
     for (int i=0; i<t; i++) {
         mpz_t ci;
         mpz_init(ci);
@@ -132,11 +129,10 @@ ZZ_mat<mpz_t> create_lattice_prime(const ZZ_mat<mpz_t>& A, int t) {
     return M;
 }
 
-void attack(){
-    const int t = 30;
-    const int rho = 32;
-    const int eta = 1024;
-    const int gamma = 32768;
+bool attack(gmp_randstate_t state,int t){
+    const int rho = 128;
+    const int eta = 6400;
+    const int gamma = 512000;
 
     random_device rd;
     mt19937 gen(rd());
@@ -148,39 +144,75 @@ void attack(){
         m[i] = dis(gen);
     }
      // print vector
-    for (int i = 0; i < t; ++i) {
-        cout << m[i] << " ";
-    }
+    // for (int i = 0; i < t; ++i) {
+    //     cout << m[i] << " ";
+    // }
     cout << endl;
 
-    vector<mpz_class> pk = genXi(rho,eta,gamma);
+    vector<mpz_class> pk = genXi(rho,eta,gamma,state);
 
     vector<mpz_class> c = enc(pk,m);
 
     ZZ_mat<mpz_t> L = create_lattice(t,c);
     mpz_class val;
+    auto lll1 = std::chrono::steady_clock::now();
 
     lll_reduction(L);
+
+    auto lll1e = std::chrono::steady_clock::now();
+    auto lllt = std::chrono::duration_cast<std::chrono::milliseconds>(lll1e - lll1).count();
+    std::cout << "Time LLL 1: " << lllt << " ms" << std::endl;
+
     ZZ_mat<mpz_t> L_prime = create_lattice_prime(L,t);
     L.clear();
+
+    auto lll2 = std::chrono::steady_clock::now();
+
     lll_reduction(L_prime);
 
+    auto lll2e = std::chrono::steady_clock::now();
+    auto lll2t = std::chrono::duration_cast<std::chrono::milliseconds>(lll2e - lll2).count();
+    std::cout << "Time LLL 2: " << lll2t << " ms" << std::endl;
    // print the first row of the matrix A
    int cols = L_prime.get_cols() - L_prime.get_rows();
     for (int i = cols; i < L_prime.get_cols(); i++) {
         L_prime[0][i].get_mpz(val.get_mpz_t());
-        gmp_printf("%Zd ", val.get_mpz_t());
+        bool res = val.get_ui() == m[i - cols];
+        if(!res){
+            cout << "Result: " << boolalpha << res << endl;
+            cout << endl;
+            return false;
+        }
+        // gmp_printf("%Zd ", val.get_mpz_t());
 
     }
-    std::cout << std::endl;
     auto end_time = std::chrono::steady_clock::now();
     auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     std::cout << "Total time: " << total_time << " ms" << std::endl;
+    cout << endl;
+    return true;
 
 }
 
 int main(){
-    attack();
+    vector<int> t {5};
+    std::random_device rd;  // obtain a random seed from the hardware
+    std::mt19937 eng(rd());  // seed the generator
+    std::uniform_int_distribution<> distr(100, 1000000000);  // define the range
+    for(int j=0;j<t.size();j++){
+        cout << "t: " << t[j] << endl;
+        for(int i=0;i<1;i++){
+            gmp_randstate_t state;
+            gmp_randinit_mt(state);
+            gmp_randseed_ui(state, distr(eng));
+            // cout << "i: " << i  << endl;
+            attack(state,t[j]);
+
+        }
+        cout << endl;
+    }
+   
+
 }
 
 

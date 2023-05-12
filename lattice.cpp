@@ -176,7 +176,7 @@ int main(){
             const unsigned int eta = 100;
             const int m = 10;
             const unsigned int rho =(int) sqrt(eta);
-            unsigned int gamma = 999 + j;
+            unsigned int gamma = 101 + j;
             gamma_j = gamma;
             mpz_class prime;
             mpz_urandomb(prime.get_mpz_t(), state, eta);

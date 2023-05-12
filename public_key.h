@@ -15,6 +15,7 @@ public:
     gmp_randclass rand;
     const time_t rand_seed {time(NULL)};
     gmp_randstate_t state;
+    unsigned int delta_size;
 
 private:
     const unsigned int noise;
@@ -26,8 +27,8 @@ private:
     mpz_class x_zero;
     mpz_class pk_sum;
     std::vector<mpz_class> chi;
-    std::vector<mpz_class> r_i;
-    std::vector<mpz_class> delta;
+    std::vector<unsigned long int> r_i;
+    std::vector<unsigned long int> delta;
    
 
 public:
@@ -43,26 +44,30 @@ public:
         chi(tau,0),
         r_i(tau,0),
         delta(tau,0),
-        rand(gmp_randinit_default)
+        rand(gmp_randinit_default),
+        delta_size{0}
         
     {
         gmp_randinit_default(state);
-        gmp_randseed_ui(state, time(NULL));
-
         rand.seed(rand_seed);
 
         // Generate random prime integer p of size eta bits
+        auto start_time = std::chrono::steady_clock::now();
+
         mpz_urandomb(prime.get_mpz_t(), state, eta);
         mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
 
         // Upper bound for q0 which is 2^y / prime
-        mpz_class bound_y(mpz_class(1) << gamma);
-        mpz_class bound_div;
-        mpz_cdiv_q(bound_div.get_mpz_t(),bound_y.get_mpz_t(),prime.get_mpz_t());
-        q_zero = rand.get_z_range(bound_div.get_ui());
-        // mpz_urandomb(q_zero.get_mpz_t(), state,bound_div.get_ui());
+        mpz_class bound(mpz_class(2) << gamma - eta);
+        mpz_urandomm(q_zero.get_mpz_t(), state, bound.get_mpz_t());
         x_zero = (2*q_zero + 1) * prime;
         genXi();
+        chi.clear();
+        r_i.clear();
+
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        // std::cout << "KeyGen: " << total_time << " ms" << std::endl;
         gmp_randclear(state);
     }
         ~PKgenerator(){
@@ -74,10 +79,13 @@ public:
     void genXi(){
         mpz_class delta_mod;
         mpz_class tmp_delta;
+        std::random_device dev;
+        std::mt19937 rng(dev());
+        std::uniform_int_distribution<std::mt19937::result_type> distr(1,noise); // distribution in range [1, 6]
 
         for (int i = 0; i < tau; i++) {
             // Generate integers r_i of size ( 2^2*noise) bits
-            r_i[i] = rand.get_z_bits(noise);
+            r_i[i] = distr(rng);
         }
 
         for (int i = 0; i < tau; i++) {
@@ -85,13 +93,15 @@ public:
             chi[i] = rand.get_z_bits(gamma);
         }
      
-
         for (int i = 0; i < tau; i++){
             // Compute the  deltas as delta = Chi mod p + xi * prime - r
             tmp_delta = chi[i] - 2*r_i[i];
             mpz_mod(delta_mod.get_mpz_t(), tmp_delta.get_mpz_t(), prime.get_mpz_t());
-            delta[i] = delta_mod;
+            delta[i] = delta_mod.get_ui();
+            int size = mpz_sizeinbase(delta_mod.get_mpz_t(), 2);
+            delta_size += size;
         }
+   
     }
 
     std::vector<mpz_class> getXi(){
@@ -108,38 +118,45 @@ public:
         mpz_class bound {2};
         mpz_class x;
         mpz_class epsilon;
+        gmp_randinit_default(state);
+        rand.seed(rand_seed);
         for(int i = 0; i < tau; i++){
             epsilon = rand.get_z_range(bound);
-            x = chi[i] - delta[i];
+            x = rand.get_z_bits(gamma) - delta[i];
             pk_sum += x * epsilon;
         }
 
         return;
     }
 
-
     mpz_class encrypt(mpz_class m){
         mpz_class r;
         mpz_class ciphertext_mod{0};
         mpz_class ciphertext;
-        mpz_class test;
+        auto start_time = std::chrono::steady_clock::now();
 
         r = rand.get_z_bits(noise);
         computePKsum();
         ciphertext = 2*pk_sum + 2 * r + m;
         mpz_mod(ciphertext_mod.get_mpz_t(), ciphertext.get_mpz_t(), x_zero.get_mpz_t());
-        mpz_mod(test.get_mpz_t(), ciphertext_mod.get_mpz_t(), mpz_class(2).get_mpz_t());
-
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        std::cout << "Encrypt: " << total_time << " ms" << std::endl;
         return ciphertext;
-
     }
 
     mpz_class decrypt(mpz_class c){
         mpz_class plaintext;
         mpz_class tmp;
-        mpz_class modulus {2};
+        mpz_t modulus;
+        mpz_init_set_ui(modulus,2);
+        auto start_time = std::chrono::steady_clock::now();
+
         mpz_mod(plaintext.get_mpz_t(), c.get_mpz_t(), prime.get_mpz_t());
-        mpz_mod(tmp.get_mpz_t(), plaintext.get_mpz_t(), modulus.get_mpz_t());
+        mpz_mod(tmp.get_mpz_t(), plaintext.get_mpz_t(), modulus);
+        auto end_time = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        std::cout << "Decrypt: " << total_time << " ms" << std::endl;
         gmp_printf("bit: %Zd\n", tmp.get_mpz_t());
         return tmp;
 
@@ -147,11 +164,8 @@ public:
 
     mpz_class add(mpz_class c1,mpz_class c2){
         mpz_class reduced_c;
-        mpz_class parity;
         mpz_class addition = c1 + c2;
         mpz_mod(reduced_c.get_mpz_t(),addition.get_mpz_t(),x_zero.get_mpz_t());
-
-
         return reduced_c;
     }
 
@@ -168,7 +182,7 @@ public:
             mpz_class m1 = rand.get_z_range(mpz_class(2));
             mpz_class m2 = rand.get_z_range(mpz_class(2));
 
-            mpz_class addition = decrypt(add(encrypt(m1),encrypt(m2)));
+            mpz_class addition = decrypt(add((m1),encrypt(m2)));
             mpz_class a = m1+m2;
             mpz_mod(result.get_mpz_t(),a.get_mpz_t(),mpz_class(2).get_mpz_t());
             
@@ -187,116 +201,21 @@ public:
         }
         return;
     }
-
-
-
-
-        
+  
     mpz_class getPrime() const { return prime; }
     mpz_class getXZero() const { return x_zero; }
     mpz_class getQZero() const { return q_zero;}
     time_t getSeed() const {printf("seed: %s\n", ctime(&rand_seed));return rand_seed; }
-    std::vector<mpz_class> getDelta() const { return delta; }
+    std::vector<unsigned long int> getDelta() const { return delta; }
+    unsigned int pksize(){
+        unsigned int size = mpz_sizeinbase(x_zero.get_mpz_t(), 2);
+        unsigned int total_size = (size + delta_size) / 8000;
+        return total_size;
 
-    void printPK(){
-        printf("seed: %s\n", ctime(&rand_seed));
-        char* str = new char[mpz_sizeinbase(x_zero.get_mpz_t(), 10) + 2];
-        mpz_get_str(str, 10, x_zero.get_mpz_t());
-        printf("x0: %s\n",str);
-        for(mpz_class v: delta){
-        char* str = new char[mpz_sizeinbase(v.get_mpz_t(), 10) + 2];
-        mpz_get_str(str, 10, v.get_mpz_t());
-        printf("delta: %s\n",str);
-        }
-        delete[] str;
-        return;
     }
+
 };
 
-
-mpz_class prime_to_m(mpz_class n, mpz_class m){
-    mpz_class g;
-    while(true){
-        mpz_gcd(g.get_mpz_t(), n.get_mpz_t(), m.get_mpz_t());
-        if(g == 1){
-            return n;
-        }else{
-            mpz_fdiv_q(n.get_mpz_t(),n.get_mpz_t(),g.get_mpz_t());
-        }
-        
-    }
-}
-mpz_class xi(mpz_class p,int gam,int eta,int rho,gmp_randstate_t state){
-
-
-    mpz_class bound_q(mpz_class(1) << (gam -eta));
-    mpz_class q;
-    mpz_class r;
-    mpz_urandomm(q.get_mpz_t(),state,bound_q.get_mpz_t());
-    mpz_class bound_r = mpz_class(1) << rho;
-    mpz_urandomm(r.get_mpz_t(),state,bound_r.get_mpz_t());
-
-    return (p * q) + r;
-}
-
-
-bool attackGACD(){
-    gmp_randstate_t state;
-    gmp_randinit_mt(state);
-    gmp_randseed_ui(state, 1234);
-    const unsigned int rho = 12;
-    const unsigned int gamma = 1000;
-    const unsigned int eta = 100;
-    mpz_class prime{"1133866015397999278511396345017"};
-    // mpz_urandomb(prime.get_mpz_t(), state, eta);
-    // mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
-
-    unsigned int pBits = mpz_sizeinbase(prime.get_mpz_t(), 2);
-    gmp_printf("prime: %Zd\n", prime.get_mpz_t());
-    printf("p size:%d \n",pBits);
-    int exp = (rho * (rho +1)) / (rho-1);
-    mpz_class B;
-    mpz_pow_ui(B.get_mpz_t(),mpz_class(2).get_mpz_t(),exp);
-    B += 2200;
-
-    mpz_class fa{1};
-    mpz_fac_ui(fa.get_mpz_t(),B.get_ui());
-
-    mpz_class g;
-    for(int j=1;j<rho;j++){
-        mpz_class z{1};
-        for(int i=0;i< (1 << rho);i++){
-            z = z * (xi(prime,gamma,eta,rho,state) - i);
-        }
-
-        if(j == 1){
-             g = z;
-            continue;
-        }
-
-        mpz_class gcd;
-        mpz_gcd(gcd.get_mpz_t(), g.get_mpz_t(), z.get_mpz_t());
-        g= prime_to_m(gcd,fa);
-        gmp_printf("g: %Zd\n", g.get_mpz_t());
-
-        // printf("j: %d \n",j);
-        unsigned int gBits = mpz_sizeinbase(g.get_mpz_t(), 2);
-        printf("gcd size:%d \n",gBits);
-
-        if(gBits == pBits || gBits < pBits){
-
-            break;
-        }
-        
-    }
-
-    if((mpz_cmp(g.get_mpz_t(),prime.get_mpz_t())) == 0){
-        return true;
-    }else{
-        return false;
-    }
-
-}
 
 #endif
 
