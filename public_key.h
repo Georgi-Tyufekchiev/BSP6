@@ -27,8 +27,8 @@ private:
     mpz_class x_zero;
     mpz_class pk_sum;
     std::vector<mpz_class> chi;
-    std::vector<unsigned long int> r_i;
-    std::vector<unsigned long int> delta;
+    std::vector<mpz_class> r_i;
+    std::vector<mpz_class> delta;
    
 
 public:
@@ -79,13 +79,9 @@ public:
     void genXi(){
         mpz_class delta_mod;
         mpz_class tmp_delta;
-        std::random_device dev;
-        std::mt19937 rng(dev());
-        std::uniform_int_distribution<std::mt19937::result_type> distr(1,noise); // distribution in range [1, 6]
-
         for (int i = 0; i < tau; i++) {
             // Generate integers r_i of size ( 2^2*noise) bits
-            r_i[i] = distr(rng);
+            r_i[i] = rand.get_z_bits(2*noise);
         }
 
         for (int i = 0; i < tau; i++) {
@@ -97,7 +93,7 @@ public:
             // Compute the  deltas as delta = Chi mod p + xi * prime - r
             tmp_delta = chi[i] - 2*r_i[i];
             mpz_mod(delta_mod.get_mpz_t(), tmp_delta.get_mpz_t(), prime.get_mpz_t());
-            delta[i] = delta_mod.get_ui();
+            delta[i] = delta_mod;
             int size = mpz_sizeinbase(delta_mod.get_mpz_t(), 2);
             delta_size += size;
         }
@@ -120,9 +116,11 @@ public:
         mpz_class epsilon;
         gmp_randinit_default(state);
         rand.seed(rand_seed);
+        mpz_class tmp;
         for(int i = 0; i < tau; i++){
+            tmp = rand.get_z_bits(gamma);
             epsilon = rand.get_z_range(bound);
-            x = rand.get_z_bits(gamma) - delta[i];
+            x =  tmp - delta[i];
             pk_sum += x * epsilon;
         }
 
@@ -205,8 +203,8 @@ public:
     mpz_class getPrime() const { return prime; }
     mpz_class getXZero() const { return x_zero; }
     mpz_class getQZero() const { return q_zero;}
-    time_t getSeed() const {printf("seed: %s\n", ctime(&rand_seed));return rand_seed; }
-    std::vector<unsigned long int> getDelta() const { return delta; }
+    // time_t getSeed() const {printf("seed: %s\n", ctime(&rand_seed));return rand_seed; }
+    std::vector<mpz_class> getDelta() const { return delta; }
     unsigned int pksize(){
         unsigned int size = mpz_sizeinbase(x_zero.get_mpz_t(), 2);
         unsigned int total_size = (size + delta_size) / 8000;

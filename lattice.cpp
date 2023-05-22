@@ -84,9 +84,21 @@ fplll::ZZ_mat<mpz_t> create_lattice_prime(const fplll::MatrixRow<fplll::Z_NR<mpz
     return L;
 }
 
-mpz_class attack(const std::vector<mpz_class>& c, const int m){
+mpz_class attack(const std::vector<mpz_class>& c, const int m,int iter){
     fplll::ZZ_mat<mpz_t> L = create_lattice(c);
-    fplll::lll_reduction(L);
+    if(iter == 0){
+        auto lll1 = std::chrono::steady_clock::now();
+
+        fplll::lll_reduction(L);
+
+        auto lll2 = std::chrono::steady_clock::now();
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(lll2 - lll1).count();
+        std::cout << "LLL1: " << total_time << " ms" << std::endl;
+    }else{
+        fplll::lll_reduction(L);
+
+    }
+   
     int rows = L.get_rows();
     int columns = L.get_cols();
     mpz_class gcd{0};
@@ -115,22 +127,19 @@ mpz_class attack(const std::vector<mpz_class>& c, const int m){
                 alpha = log_val;
             }
         }
-        // mpf_class m_f = (float) 1 / (float) m;
-        // mpf_class size = mpz_sizeinbase(c[m-1].get_mpz_t(), 2);
-        // mpf_class log2_m = log2( (float) sqrt((float) m)/ (float)(m+1));
-        // mpf_class res = m_f * size + log2_m;
-        // mpz_class res_mpz {res};       
-        // mpz_class rho = abs(res_mpz - alpha);
-
-        // mpf_class pow_1 {pow(m, (m-1)/2)};
-        // mpf_class pow_2 {pow(m+1, -(m+1)/2)};
-        
-        // mpf_class pow_3{2 << m*rho.get_ui()-alpha.get_ui()};
-        // mpz_class C {(pow_1 * pow_2 * pow_3) };
-        // gmp_printf("C: %Zd\n", C.get_mpz_t());
         mpz_class C {mpz_class(2) << 100};
         fplll::ZZ_mat<mpz_t> L_prime = create_lattice_prime(L[i],c,C);
-        fplll::lll_reduction(L_prime);
+        if(iter == 0){
+            auto start_time = std::chrono::steady_clock::now();
+
+            fplll::lll_reduction(L_prime);
+            auto end_time = std::chrono::steady_clock::now();
+            auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+            std::cout << "LLL2: " << total_time << " ms" << std::endl;
+        }else{
+            fplll::lll_reduction(L_prime);
+        }
+       
         int rows_p = L_prime.get_rows();
         int cols_p = L_prime.get_cols();
         for(int j=0;j<rows_p;j++){
@@ -150,74 +159,53 @@ mpz_class attack(const std::vector<mpz_class>& c, const int m){
 int main(){
     //(100,200) m=3 rho 12
     //(100,328) m=5 rho sqrt(eta)
+    //(100,117) m=2 rho sqrt(eta)
 
+    //(200,253) m=2 rho sqrt(eta)
     //(200,300) m=3 rho sqrt(eta)
     //(200,443) m=5 rho 12
 
-    //(300,400) m=3 rho 12
-
+    //(50,79) m=2 rho srqt(eta)
     //(50,210) m=5 rho sqrt(eta)
     //(50,123) m=3 rho sqrt(eta)
-    //(50,394) m =10 rho sqrt(eta)
-    auto start_time = std::chrono::steady_clock::now();
     std::random_device rd;  // obtain a random seed from the hardware
     std::mt19937 eng(rd());  // seed the generator
     std::uniform_int_distribution<> distr(100, 1000000000);  // define the range
     unsigned int gamma_j = 0;
     std::vector<std::tuple<int, int>> vec;
 
-    for(int j =0;j<900;j++){
-        int cnt = 0;
+    std::vector<int> gamma {253,300,443};
+    std::vector<int> m {2,3,5};
 
-        for(int i =0;i<50;i++){
+    for(int j =0;j<3;j++){
+        int cnt = 0;
+        auto start_time = std::chrono::steady_clock::now();
+
+        for(int i =0;i<100;i++){
+
             gmp_randstate_t state;
             gmp_randinit_mt(state);
             gmp_randseed_ui(state, distr(eng));
-            const unsigned int eta = 100;
-            const int m = 10;
+            const unsigned int eta = 200;
             const unsigned int rho =(int) sqrt(eta);
-            unsigned int gamma = 101 + j;
-            gamma_j = gamma;
             mpz_class prime;
             mpz_urandomb(prime.get_mpz_t(), state, eta);
             mpz_nextprime(prime.get_mpz_t(), prime.get_mpz_t());
-            // gmp_printf("prime: %Zd\n", prime.get_mpz_t());
 
-            std::vector<mpz_class> c = xi(prime,gamma,eta,rho,state,m);
-            mpz_class p = attack(c,m);
-            // gmp_printf("p: %Zd\n", p.get_mpz_t());
+            std::vector<mpz_class> c = xi(prime,gamma[j],eta,rho,state,m[j]);
+            mpz_class p = attack(c,m[j],i);
 
-            // std::cout << "RESULT: " << mpz_cmp(prime.get_mpz_t(),p.get_mpz_t()) << std::endl;
             if(mpz_cmp(prime.get_mpz_t(),p.get_mpz_t()) == 0){
                 cnt +=1;
             }
 
         }
-        auto end_time = std::chrono::steady_clock::now();
-
-        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        if(cnt == 0 || cnt < 5){
-            continue;
-        }else{
-            // std::cout << "Total time: " << total_time << " ms" << std::endl;
-            vec.emplace_back(gamma_j,cnt);
-            // std::cout << "Success: " << cnt << std::endl;
-
-            // printf("gamma IS %d \n",gamma_j);
-            // printf("\n");
-
+            auto end_time = std::chrono::steady_clock::now();
+            auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+            std::cout << "Total time: " << total_time << " ms" << std::endl;
+            std::cout << "Success: " << cnt << std::endl;
         }
 
     
     }
-      // Sort the vector of tuples by the second integer in descending order
-    std::sort(vec.begin(), vec.begin() + vec.size(), [](const auto& a, const auto& b) {
-        return std::get<1>(a) > std::get<1>(b);
-    });
-
-    // Print the sorted vector of tuples
-    for (const auto& tuple : vec) {
-        std::cout << "(" << std::get<0>(tuple) << ", " << std::get<1>(tuple) << ")" << std::endl;
-    }
     
-}
