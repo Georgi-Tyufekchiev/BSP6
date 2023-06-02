@@ -16,10 +16,12 @@ int main(){
         int mu = 65;
         SwitchKey test(levels,theta,rho,gamma,mu);
         test.switchKeyGen(levels);
-        mpz_class c1 = test.enc(mpz_class(1));
-        mpz_class c2 = test.enc(mpz_class(0));
+        std::vector<mpz_class> cts{test.enc(mpz_class(1)),test.enc(mpz_class(1)),test.enc(mpz_class(1))};
 
-        mpz_class m = test.add(c1,c2);
+        std::vector<mpz_class> m = test.add(cts);
+        for(mpz_class elem: m){
+          std::cout << test.dec(elem);
+        }
         std::cout<< "\n";
         // std::this_thread::sleep_for(std::chrono::seconds(1)); 
 
@@ -29,7 +31,8 @@ int main(){
       // PKgenerator test(1026,158,27,150000);
       // mpz_class c1 = test.encrypt(mpz_class(1));
       // mpz_class d = test.decrypt(c1);
-    //   for(int i = 0;i<1 ;i++){
+      // std::cout << test.pksize() << std::endl;
+      // for(int i = 0;i<1 ;i++){
 
     //     PKgenerator test(1026,158,27,150000);
     //     mpz_class c1 = test.encrypt(mpz_class(1));

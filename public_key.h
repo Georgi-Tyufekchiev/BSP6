@@ -143,7 +143,7 @@ public:
         return ciphertext;
     }
 
-    mpz_class decrypt(mpz_class c){
+    unsigned long decrypt(mpz_class c){
         mpz_class plaintext;
         mpz_class tmp;
         mpz_t modulus;
@@ -154,9 +154,9 @@ public:
         mpz_mod(tmp.get_mpz_t(), plaintext.get_mpz_t(), modulus);
         auto end_time = std::chrono::steady_clock::now();
         auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        std::cout << "Decrypt: " << total_time << " ms" << std::endl;
-        gmp_printf("bit: %Zd\n", tmp.get_mpz_t());
-        return tmp;
+        // std::cout << "Decrypt: " << total_time << " ms" << std::endl;
+        // gmp_printf("bit: %Zd\n", tmp.get_mpz_t());
+        return tmp.get_ui();
 
     }
 

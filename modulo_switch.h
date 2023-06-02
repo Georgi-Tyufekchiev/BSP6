@@ -256,15 +256,55 @@ class SwitchKey{
 
     mpz_class enc(mpz_class m){return pk_list[1]->encrypt(m);}
     
-    mpz_class dec(mpz_class c,int i){return pk_list[2]->decrypt(c);}
+    unsigned long dec(mpz_class c){return pk_list[2]->decrypt(c);}
 
-    mpz_class add(mpz_class c1, mpz_class c2){
-        mpz_class parity;
-        mpz_class reduced;
-        mpz_class c3 = c1 + c2;
-        mpz_class c_prim = switchKey(c3);
-        mpz_class m = dec(c_prim,1);
-        return m; 
+    mpz_class XOR_gate(const mpz_class& ct1, const mpz_class& ct2){
+        mpz_class c;
+        mpz_add(c.get_mpz_t(),ct1.get_mpz_t(),ct2.get_mpz_t());
+        mpz_class new_c = switchKey(c);
+        return new_c;
+    }
+
+    mpz_class AND_gate(const mpz_class& ct1, const mpz_class& ct2){
+        mpz_class c;
+        mpz_mul(c.get_mpz_t(),ct1.get_mpz_t(),ct2.get_mpz_t());
+        mpz_class new_c = switchKey(c);
+        return new_c;
+    }
+
+    mpz_class OR_gate(const mpz_class& ct1, const mpz_class& ct2){
+        mpz_class one = pk_list[1]->encrypt(mpz_class(1));
+        mpz_class result = XOR_gate(ct1,one);
+        mpz_class tmp = XOR_gate(ct2,one);
+        result = AND_gate(result,tmp);   
+        result = XOR_gate(result,one);
+        return result;  
+    }
+
+    mpz_class NOT_gate(const mpz_class& ct1){
+        mpz_class one = pk_list[1]->encrypt(mpz_class(1));
+        mpz_class result = XOR_gate(ct1,one);
+        return result;
+    }
+
+    std::vector<mpz_class> add(std::vector<mpz_class> cts){
+        std::vector<mpz_class> new_cts;
+        new_cts.reserve(cts.size());
+        if(cts.size() == 2){
+            new_cts.emplace_back(AND_gate(cts[0],cts[1]));
+            new_cts.emplace_back(XOR_gate(cts[0],cts[1]));
+        }
+
+        if(cts.size() == 3){
+            mpz_class tmp = OR_gate(cts[0],cts[1]);
+            mpz_class tmp2 = OR_gate(cts[1],cts[2]);
+            new_cts.emplace_back(AND_gate(tmp,tmp2));
+            tmp = XOR_gate(cts[0],cts[1]);
+            new_cts.emplace_back(XOR_gate(tmp,cts[2]));
+        }
+   
+
+        return new_cts; 
     }
 
 };
